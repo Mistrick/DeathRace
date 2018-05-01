@@ -9,42 +9,46 @@
 #endif
 
 #define PLUGIN "Deathrace"
-#define VERSION "2.3"
+#define VERSION "2.3f"
 #define AUTHOR "Xalus/Mistrick"
+
+#pragma semicolon 1
 
 #define PREFIX "^4[Deathrace]"
 
-new const g_strGamename[] = "Deathrace (v2.3)";
-
-enum _:enumCvars {
+enum _:Cvars {
 	CVAR_BREAKTYPE
 };
-new g_arrayCvars[enumCvars]
 
-enum _:enumForwards {
+new g_pCvars[Cvars];
+
+enum _:Forwards {
 	FORWARD_CRATEHIT,
 	FORWARD_WIN
 };
-new g_hForwards[enumForwards]
+
+new g_hForwards[Forwards];
 
 enum _:enumPlayers {
 	PLAYER_ENT_BLOCK
 };
-new g_players[33][enumPlayers]
+new g_players[33][enumPlayers];
 
 
-new Trie:g_trieRemoveEntities
-new bool:g_boolRoundended
+new Trie:g_trieRemoveEntities;
+new bool:g_bRoundEnded;
 
 public plugin_init() 
 {
-	register_plugin(PLUGIN, VERSION, AUTHOR)
+	register_plugin(PLUGIN, VERSION, AUTHOR);
 	register_cvar("deathrace_mod", VERSION, FCVAR_SERVER);
 	
 	// Register: Cvars
-	g_arrayCvars[CVAR_BREAKTYPE] 	= register_cvar("deathrace_touch_breaktype", "1")
+	g_pCvars[CVAR_BREAKTYPE] 	= register_cvar("deathrace_touch_breaktype", "1");
 		// 0 break nothing, 1 break only crates, 2 break everything
 	
+	register_clcmd("chooseteam", "Command_ChooseTeam");
+
 	// Register: Ham
 	RegisterHam(Ham_Touch, "func_breakable", "Ham_TouchCrate_Pre", 0);
 	RegisterHam(Ham_TakeDamage, "func_breakable", "Ham_DamageCrate_Pre", 0);
@@ -61,7 +65,9 @@ public plugin_init()
 	register_event("HLTV", "Event_NewRound", "a", "1=0", "2=0");
 	
 	// Register: Forward
-	register_forward(FM_GetGameDescription, "Forward_GetGameDescription" );
+	new description[32];
+	formatex(description, charsmax(description), "Deathrace (%s)", VERSION);
+	set_member_game(m_GameDesc, description);
 	
 	// Register: MultiForward
 	g_hForwards[FORWARD_CRATEHIT]	= CreateMultiForward("deathrace_crate_hit", ET_STOP, FP_CELL, FP_CELL); 	// deathrace_crate_hit(id, ent)
@@ -70,6 +76,30 @@ public plugin_init()
 	// add set cvar autojoin
 	// join to CT
 	// block change team
+	set_cvar_num("mp_autoteambalance", 0);
+	set_cvar_num("mp_round_infinite", 1);
+	set_cvar_num("mp_freezetime", 0);
+	set_cvar_num("mp_friendlyfire", 1);
+	set_cvar_num("mp_limitteams", 0);
+	set_cvar_num("mp_auto_join_team", 1);
+	set_cvar_string("humans_join_team", "CT");
+
+	Block_Commands();
+}
+Block_Commands()
+{
+	new szBlockedCommands[][] = {"jointeam", "joinclass", "radio1", "radio2", "radio3"};
+	for(new i = 0; i < sizeof(szBlockedCommands); i++) {
+		register_clcmd(szBlockedCommands[i], "Command_BlockCmds");
+	}
+}
+public Command_BlockCmds(id)
+{
+	return PLUGIN_HANDLED;
+}
+public Command_ChooseTeam(id)
+{
+	return PLUGIN_HANDLED;
 }
 public plugin_precache()
 {
@@ -120,6 +150,7 @@ public plugin_precache()
 	for( new i = 0; i < sizeof( remove_entities ); i++ ) {
 		TrieSetCell(g_trieRemoveEntities, remove_entities[i], i);
 	}
+	// TODO: add unregister
 	register_forward(FM_Spawn, "Forward_Spawn");
 }
 
@@ -135,22 +166,17 @@ public Forward_Spawn(entity)
 			return FMRES_SUPERCEDE;
 		}
 		if(equal(classname, "info_player_deathmatch")) {
-			set_pev(entity, pev_classname, "info_player_start")
+			set_pev(entity, pev_classname, "info_player_start");
 		}
 	}
 	return FMRES_IGNORED;
 }
-public Forward_GetGameDescription()
-{ 
-	forward_return(FMV_STRING, g_strGamename); 
-	return FMRES_SUPERCEDE; 
-} 
 
 // Public: Messages
 public Message_TextMsg()
 {
-	static textmsg[22]
-	get_msg_arg_string(2, textmsg, charsmax(textmsg))
+	static textmsg[22];
+	get_msg_arg_string(2, textmsg, charsmax(textmsg));
 		
 	// Block Teammate attack and kill Message
 	if (equal(textmsg, "#Game_teammate_attack") || equal(textmsg, "#Killed_Teammate")) {
@@ -161,10 +187,10 @@ public Message_TextMsg()
 }
 public Message_StatusIcon(const iMsgId, const iMsgDest, const id) 
 {
-	static szMsg[8];
-	get_msg_arg_string(2, szMsg, 7);
+	static msg[8];
+	get_msg_arg_string(2, msg, charsmax(msg));
 	
-	if(equal(szMsg, "buyzone") && get_msg_arg_int(1)) {
+	if(equal(msg, "buyzone") && get_msg_arg_int(1)) {
 		set_pdata_int(id, 235, get_pdata_int(id, 235) & ~(1 << 0));
 		return PLUGIN_HANDLED;
 	}
@@ -174,9 +200,7 @@ public Message_StatusIcon(const iMsgId, const iMsgDest, const id)
 // Public: Event
 public Event_NewRound()
 {
-	g_boolRoundended = false
-	
-	remove_task(15151)
+	g_bRoundEnded = false;
 }
 
 // Public: Ham
@@ -184,9 +208,11 @@ public Ham_PlayerKilled_Post(id)
 {
 	
 	new players[32], pnum;
-	get_players(players, pnum, "ae", "CT")
+	get_players(players, pnum, "ae", "CT");
 	
 	if(pnum <= 1) {
+		new winmsg[64] = "All dead!";
+
 		if(players[0]) {
 			new ret;
 			ExecuteForward(g_hForwards[FORWARD_WIN], ret, id, 0);
@@ -196,44 +222,41 @@ public Ham_PlayerKilled_Post(id)
 			}
 			
 			new name[32];
-			get_user_name(players[0], name, charsmax(name))
+			get_user_name(players[0], name, charsmax(name));
 			
-			client_print_color(0, print_team_default, "%s^3 %s^1 was the only survivor left!", PREFIX, name)
+			client_print_color(0, print_team_default, "%s^3 %s^1 was the only survivor left!", PREFIX, name);
+
+			formatex(winmsg, charsmax(winmsg), "%s was the only survivor left!", name);
 		}
 		
-		rg_round_end(5.0, WINSTATUS_CTS);
+		rg_round_end(5.0, WINSTATUS_CTS, ROUND_NONE, winmsg);
 	}
 	return HAM_IGNORED;
 }
 
 public Ham_TouchCrate_Pre(entity, id)
 {
-	if(pev_valid(entity) && is_user_alive(id) && !g_boolRoundended) {
-		static intBreaktype
-		if(g_players[id][PLAYER_ENT_BLOCK] != entity
-			&& (intBreaktype || (intBreaktype = get_pcvar_num(g_arrayCvars[CVAR_BREAKTYPE]))) ) {
+	if(pev_valid(entity) && is_user_alive(id) && !g_bRoundEnded) {
+		static break_type;
+		if(g_players[id][PLAYER_ENT_BLOCK] != entity && (break_type || (break_type = get_pcvar_num(g_pCvars[CVAR_BREAKTYPE]))) ) {
 			static target_name[32];
 			pev(entity, pev_targetname, target_name, charsmax(target_name));
 				
 				// Lets see if we got a crate.
-			if( (intBreaktype == 2) || (intBreaktype == 1 && containi(target_name, "crate") >= 0) ) {
+			if( (break_type == 2) || (break_type == 1 && containi(target_name, "crate") >= 0) ) {
 				ExecuteHamB(Ham_TakeDamage, entity, id, id, 9999.0, DMG_CRUSH);
 			}
 		}
 	}
-	return HAM_IGNORED
+	return HAM_IGNORED;
 }
 public Ham_DamageCrate_Pre(entity, inflictor, attacker, Float:damage, bits)
 {
-	if(pev_valid(entity)
-	&& is_user_alive(attacker)
-	&& !g_boolRoundended
-	&& (get_user_weapon(attacker) == CSW_KNIFE || bits & DMG_CRUSH) 
-	&& g_players[attacker][PLAYER_ENT_BLOCK] != entity)
-	{	
-		if( (pev(entity, pev_health) - damage) <= 0.0 )
-		{
-			g_players[attacker][PLAYER_ENT_BLOCK] = entity
+	if(pev_valid(entity) && is_user_alive(attacker) && !g_bRoundEnded
+		&& (get_user_weapon(attacker) == CSW_KNIFE || bits & DMG_CRUSH)
+		&& g_players[attacker][PLAYER_ENT_BLOCK] != entity) {	
+		if( (pev(entity, pev_health) - damage) <= 0.0 ) {
+			g_players[attacker][PLAYER_ENT_BLOCK] = entity;
 			
 			new ret;
 			ExecuteForward(g_hForwards[FORWARD_CRATEHIT], ret, attacker, entity);
@@ -241,44 +264,39 @@ public Ham_DamageCrate_Pre(entity, inflictor, attacker, Float:damage, bits)
 			return ret;
 		}
 	}
-	return HAM_IGNORED
+	return HAM_IGNORED;
 }
 public Ham_DamagePlayer_Pre(id, inflictor, attacker, Float:damage, bits)
 {
-	if(is_user_alive(id)
-	&& is_user_connected(attacker)
-	&& inflictor == attacker)
-	{
+	if(is_user_alive(id) && is_user_connected(attacker) && inflictor == attacker) {
 		return (get_user_weapon(attacker) == CSW_KNIFE) ? HAM_SUPERCEDE : HAM_IGNORED;
 	}
-	return HAM_IGNORED
+	return HAM_IGNORED;
 }
 public Ham_PressButton_Post(entity, id)	
 {
-	if(pev_valid(entity)
-	&& is_user_alive(id)
-	&& !g_boolRoundended)
-	{		
+	if(pev_valid(entity) && is_user_alive(id) && !g_bRoundEnded) {		
 		static target_name[32];
 		pev(entity, pev_targetname, target_name, charsmax(target_name));
 		
-		if(equal(target_name, "winbut")) // winbut
-		{
-			g_boolRoundended = true;
+		// winbut 
+		if(equal(target_name, "winbut")) {
+			g_bRoundEnded = true;
 		
 			new ret;
 			ExecuteForward(g_hForwards[FORWARD_WIN], ret, id, 1);
 			
-			if(!ret)
-			{
-				new name[32];
-				get_user_name(id, name, charsmax(name));
-				
-				client_print_color(0, print_team_default, "%s^3 %s^1 finished the deathrace!", PREFIX, name)
+			new name[32];
+			get_user_name(id, name, charsmax(name));
+			
+			if(!ret) {
+				client_print_color(0, print_team_default, "%s^3 %s^1 finished the deathrace!", PREFIX, name);
 			}
 			
-				// End round
-			rg_round_end(5.0, WINSTATUS_CTS);
+			// End round
+			new winmsg[64];
+			formatex(winmsg, charsmax(winmsg), "%s finished the deathrace!", name);
+			rg_round_end(5.0, WINSTATUS_CTS, ROUND_NONE, winmsg);
 		}
 	}
 }

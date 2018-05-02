@@ -16,23 +16,13 @@
 
 #define PREFIX "^4[Deathrace]"
 
-enum _:Cvars {
-	CVAR_BREAKTYPE
-};
-
-new g_pCvars[Cvars];
-
 enum _:Forwards {
-	FORWARD_CRATEHIT,
 	FORWARD_WIN
 };
 
 new g_hForwards[Forwards];
 
-enum _:enumPlayers {
-	PLAYER_ENT_BLOCK
-};
-new g_players[33][enumPlayers];
+
 
 
 new Trie:g_trieRemoveEntities;
@@ -41,17 +31,12 @@ new bool:g_bRoundEnded;
 public plugin_init() 
 {
 	register_plugin(PLUGIN, VERSION, AUTHOR);
-	register_cvar("deathrace_mod", VERSION, FCVAR_SERVER);
 	
-	// Register: Cvars
-	g_pCvars[CVAR_BREAKTYPE] 	= register_cvar("deathrace_touch_breaktype", "1");
-		// 0 break nothing, 1 break only crates, 2 break everything
+	register_cvar("deathrace_mod", VERSION, FCVAR_SERVER);
 	
 	register_clcmd("chooseteam", "Command_ChooseTeam");
 
 	// Register: Ham
-	RegisterHam(Ham_Touch, "func_breakable", "Ham_TouchCrate_Pre", 0);
-	RegisterHam(Ham_TakeDamage, "func_breakable", "Ham_DamageCrate_Pre", 0);
 	RegisterHam(Ham_TakeDamage, "player", "Ham_DamagePlayer_Pre", 0);
 	
 	RegisterHam(Ham_Use, "func_button", "Ham_PressButton_Post", 1);
@@ -64,13 +49,11 @@ public plugin_init()
 	// Register: Event
 	register_event("HLTV", "Event_NewRound", "a", "1=0", "2=0");
 	
-	// Register: Forward
 	new description[32];
 	formatex(description, charsmax(description), "Deathrace (%s)", VERSION);
 	set_member_game(m_GameDesc, description);
 	
 	// Register: MultiForward
-	g_hForwards[FORWARD_CRATEHIT]	= CreateMultiForward("deathrace_crate_hit", ET_STOP, FP_CELL, FP_CELL); 	// deathrace_crate_hit(id, ent)
 	g_hForwards[FORWARD_WIN]		= CreateMultiForward("deathrace_win", ET_STOP, FP_CELL, FP_CELL); // deathrace_win(id, type) (type [ 0: Survivor | 1: Map Finish ])
 
 	// add set cvar autojoin
@@ -103,13 +86,8 @@ public Command_ChooseTeam(id)
 }
 public plugin_precache()
 {
-		// Entity stuff (Credit: Exolent[jNr]
-	new entity = create_entity( "hostage_entity" );
-	entity_set_origin( entity, Float:{ 0.0, 0.0, -55000.0 } );
-	entity_set_size( entity, Float:{ -1.0, -1.0, -1.0 }, Float:{ 1.0, 1.0, 1.0 } );
-	DispatchSpawn( entity );
-	
-	entity = create_entity( "player_weaponstrip" );
+	// Entity stuff (Credit: Exolent[jNr]
+	new entity = create_entity( "player_weaponstrip" );
 	DispatchKeyValue( entity, "targetname", "stripper" );
 	DispatchSpawn( entity );
 	
@@ -129,20 +107,9 @@ public plugin_precache()
 	DispatchSpawn( entity );
 	
 	new const remove_entities[][] = {
-		"func_bomb_target",
-		"info_bomb_target",
-		"hostage_entity",
-		"monster_scientist",
-		"func_hostage_rescue",
-		"info_hostage_rescue",
-		"info_vip_start",
-		"func_vip_safetyzone",
-		"func_escapezone",
-		// "armoury_entity",
-		"info_map_parameters",
-		"player_weaponstrip",
-		"game_player_equip",
-		"func_buyzone"
+		"func_bomb_target", "info_bomb_target", "hostage_entity", "monster_scientist", "func_hostage_rescue",
+		"info_hostage_rescue", "info_vip_start", "func_vip_safetyzone", "func_escapezone", "info_map_parameters",
+		"player_weaponstrip", "game_player_equip", "func_buyzone"
 	};
 	
 	g_trieRemoveEntities = TrieCreate( );
@@ -185,6 +152,7 @@ public Message_TextMsg()
 
 	return PLUGIN_CONTINUE;
 }
+// TODO: rework buyzone block
 public Message_StatusIcon(const iMsgId, const iMsgDest, const id) 
 {
 	static msg[8];
@@ -206,7 +174,6 @@ public Event_NewRound()
 // Public: Ham
 public Ham_PlayerKilled_Post(id)
 {
-	
 	new players[32], pnum;
 	get_players(players, pnum, "ae", "CT");
 	
@@ -230,39 +197,6 @@ public Ham_PlayerKilled_Post(id)
 		}
 		
 		rg_round_end(5.0, WINSTATUS_CTS, ROUND_NONE, winmsg);
-	}
-	return HAM_IGNORED;
-}
-
-public Ham_TouchCrate_Pre(entity, id)
-{
-	if(pev_valid(entity) && is_user_alive(id) && !g_bRoundEnded) {
-		static break_type;
-		if(g_players[id][PLAYER_ENT_BLOCK] != entity && (break_type || (break_type = get_pcvar_num(g_pCvars[CVAR_BREAKTYPE]))) ) {
-			static target_name[32];
-			pev(entity, pev_targetname, target_name, charsmax(target_name));
-				
-				// Lets see if we got a crate.
-			if( (break_type == 2) || (break_type == 1 && containi(target_name, "crate") >= 0) ) {
-				ExecuteHamB(Ham_TakeDamage, entity, id, id, 9999.0, DMG_CRUSH);
-			}
-		}
-	}
-	return HAM_IGNORED;
-}
-public Ham_DamageCrate_Pre(entity, inflictor, attacker, Float:damage, bits)
-{
-	if(pev_valid(entity) && is_user_alive(attacker) && !g_bRoundEnded
-		&& (get_user_weapon(attacker) == CSW_KNIFE || bits & DMG_CRUSH)
-		&& g_players[attacker][PLAYER_ENT_BLOCK] != entity) {	
-		if( (pev(entity, pev_health) - damage) <= 0.0 ) {
-			g_players[attacker][PLAYER_ENT_BLOCK] = entity;
-			
-			new ret;
-			ExecuteForward(g_hForwards[FORWARD_CRATEHIT], ret, attacker, entity);
-			
-			return ret;
-		}
 	}
 	return HAM_IGNORED;
 }

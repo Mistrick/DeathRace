@@ -13,7 +13,7 @@
 #endif
 
 #define PLUGIN "Deathrace: Crates"
-#define VERSION "1.3"
+#define VERSION "1.3.1"
 #define AUTHOR "Xalus/Mistrick"
 
 #pragma semicolon 1
@@ -29,11 +29,11 @@ forward deathrace_win(id, Float:flTime);
 
 new const CRATE_CLASSNAME[] = "crate";
 new const CRATE_MODEL[] = "models/deathrace/deathrace_crates.mdl";
-new const Float:CRATE_MINS[3] = {-40.0, -40.0, -40.0};
-new const Float:CRATE_MAXS[3] = {40.0, 40.0, 40.0};
+new const Float:CRATE_MINS[3] = {-28.0, -28.0, -28.0};
+new const Float:CRATE_MAXS[3] = {28.0, 28.0, 28.0};
 
 enum _:Cvars {
-	BREAKTYPE,
+	TOUCH_BREAKTYPE,
 	RANDOM_CRATES,
 	CRATE_RESPAWN
 };
@@ -111,7 +111,7 @@ public plugin_init()
 	register_plugin(PLUGIN, VERSION, AUTHOR);
 	
 	// Register: Cvars
-	g_pCvars[BREAKTYPE] = register_cvar("deathrace_touch_breaktype", "1"); // 0 break nothing, 1 break only crates, 2 break everything
+	g_pCvars[TOUCH_BREAKTYPE] = register_cvar("deathrace_touch_breaktype", "1"); // 0 break nothing, 1 break only crates, 2 break everything
 	g_pCvars[RANDOM_CRATES] = register_cvar("deathrace_random_crates", "1"); // 0 - disable, 1 - enable
 	g_pCvars[CRATE_RESPAWN] = register_cvar("deathrace_crate_respawn", "5"); // 0 - disable, seconds
 
@@ -139,7 +139,6 @@ public plugin_precache()
 }
 public plugin_cfg()
 {
-
 	g_aCrateCoords = ArrayCreate(CrateSpawns, 1);
 
 	new ent = -1, target_name[32], Float:origin[3], Float:mins[3], Float:maxs[3];
@@ -167,7 +166,7 @@ public plugin_cfg()
 		origin[0] = Float:crate_info[CrateOrigin][0];
 		origin[1] = Float:crate_info[CrateOrigin][1];
 		origin[2] = Float:crate_info[CrateOrigin][2];
-		create_crate(get_num(RANDOM_CRATES) ? random(CrateList) : crate_info[CrateType], origin);
+		create_crate(get_num(RANDOM_CRATES) && crate_info[CrateType] != CRATE_DEATH ? random(CrateList) : crate_info[CrateType], origin);
 	}
 }
 create_crate(crate, Float:origin[3])
@@ -225,14 +224,14 @@ public event_new_round()
 		origin[0] = Float:crate_info[CrateOrigin][0];
 		origin[1] = Float:crate_info[CrateOrigin][1];
 		origin[2] = Float:crate_info[CrateOrigin][2];
-		create_crate(get_num(RANDOM_CRATES) ? random(CrateList) : crate_info[CrateType], origin);
+		create_crate(get_num(RANDOM_CRATES) && crate_info[CrateType] != CRATE_DEATH ? random(CrateList) : crate_info[CrateType], origin);
 	}
 }
 public ham_touch_crate_pre(ent, id)
 {
 	if(pev_valid(ent) && is_user_alive(id) && !g_bRoundEnded) {
 		static break_type;
-		if(g_players[id][PLAYER_ENT_BLOCK] != ent && (break_type || (break_type = get_pcvar_num(g_pCvars[BREAKTYPE]))) ) {
+		if(g_players[id][PLAYER_ENT_BLOCK] != ent && (break_type || (break_type = get_pcvar_num(g_pCvars[TOUCH_BREAKTYPE]))) ) {
 			static target_name[32];
 			pev(ent, pev_targetname, target_name, charsmax(target_name));
 				
@@ -246,21 +245,32 @@ public ham_touch_crate_pre(ent, id)
 }
 public ham_damage_crate_pre(ent, inflictor, attacker, Float:damage, bits)
 {
-	if(pev_valid(ent) && is_user_alive(attacker) && !g_bRoundEnded
-		&& (get_user_weapon(attacker) == CSW_KNIFE || bits & DMG_CRUSH)
-		&& g_players[attacker][PLAYER_ENT_BLOCK] != ent) {	
-		if( (pev(ent, pev_health) - damage) <= 0.0 ) {
+	if(pev_valid(ent) && is_user_alive(attacker) && !g_bRoundEnded && g_players[attacker][PLAYER_ENT_BLOCK] != ent) {
+		new target_name[32];
+		pev(ent, pev_targetname, target_name, charsmax(target_name));
+
+		if(!TrieKeyExists(g_tCrates, target_name)) {
+			return HAM_IGNORED;
+		}
+
+		if(get_num(CRATE_RESPAWN) > 0) {
+			new Flaot:origin[3];
+			pev(ent, pev_origin, origin);
+			new data[3 + 1];
+			data[0] = _:origin[0];
+			data[1] = _:origin[1];
+			data[2] = _:origin[2];
+			TrieGetCell(g_tCrates, target_name, data[3]);
+
+			set_task(get_float(CRATE_RESPAWN), "task_crate_respawn", get_member_game(m_iTotalRoundsPlayed), data, sizeof(data));
+		}
+
+		if((get_user_weapon(attacker) == CSW_KNIFE || bits & DMG_CRUSH) && (pev(ent, pev_health) - damage) <= 0.0 ) {
 			g_players[attacker][PLAYER_ENT_BLOCK] = ent;
-			
+
 			new ret;
 			ExecuteForward(g_hForwards[FORWARD_CRATEHIT], ret, attacker, ent);
 
-			if(get_num(CRATE_RESPAWN) > 0) {
-				new Flaot:origin[3];
-				pev(ent, pev_origin, origin);
-				set_task(get_float(CRATE_RESPAWN), "task_crate_respawn", get_member_game(m_iTotalRoundsPlayed), _:origin, sizeof(origin));
-			}
-			
 			return ret;
 		}
 	}
@@ -272,11 +282,12 @@ public task_crate_respawn(params[], taskid)
 		return;
 	}
 
-	new Float:origin[3];
+	new type, Float:origin[3];
 	origin[0] = Float:params[0];
 	origin[1] = Float:params[1];
 	origin[2] = Float:params[2];
-	create_crate(random(CrateList), origin);
+	type = params[3];
+	create_crate(get_num(RANDOM_CRATES) && type != CRATE_DEATH ? random(CrateList) : type, origin);
 }
 // Public: Ham
 public ham_player_reset_max_speed_post(id)

@@ -22,9 +22,6 @@ enum _:Forwards {
 
 new g_hForwards[Forwards];
 
-
-
-
 new Trie:g_trieRemoveEntities;
 new bool:g_bRoundEnded;
 
@@ -182,11 +179,11 @@ public Ham_PlayerKilled_Post(id)
 
 		if(players[0]) {
 			new ret;
-			ExecuteForward(g_hForwards[FORWARD_WIN], ret, id, 0);
+			ExecuteForward(g_hForwards[FORWARD_WIN], ret, players[0], 0);
 			
-			if(ret == 2) {
+			/* if(ret == 2) {
 				return HAM_IGNORED;
-			}
+			} */
 			
 			new name[32];
 			get_user_name(players[0], name, charsmax(name));
@@ -196,7 +193,7 @@ public Ham_PlayerKilled_Post(id)
 			formatex(winmsg, charsmax(winmsg), "%s was the only survivor left!", name);
 		}
 		
-		rg_round_end(5.0, WINSTATUS_CTS, ROUND_NONE, winmsg);
+		rg_round_end(5.0, WINSTATUS_CTS, ROUND_CTS_WIN, winmsg);
 	}
 	return HAM_IGNORED;
 }
@@ -230,7 +227,7 @@ public Ham_PressButton_Post(entity, id)
 			// End round
 			new winmsg[64];
 			formatex(winmsg, charsmax(winmsg), "%s finished the deathrace!", name);
-			rg_round_end(5.0, WINSTATUS_CTS, ROUND_NONE, winmsg);
+			rg_round_end(5.0, WINSTATUS_CTS, ROUND_CTS_WIN, winmsg);
 		}
 	}
 }

@@ -1,9 +1,9 @@
 #include <amxmodx>
-#include <fun>
+#include <engine>
 #include <fakemeta>
+#include <fun>
 #include <hamsandwich>
 #include <cstrike>
-#include <engine>
 #include <reapi>
 #include <deathrace_stocks>
 #include <xs>
@@ -72,7 +72,7 @@ enum _:CrateList {
 	CRATE_RANDOM
 };
 
-new const g_aCrate[CrateList][CrateInfo] = {
+new const g_eCrate[CrateList][CrateInfo] = {
 	{"speedcrate",		"extra speed", 		400, 	2}, // Amount: Speed
 	{"hecrate", 		"a hegrenade",		1, 	2}, // Amount: Nades
 	{"uzicrate", 		"an uzi",		3, 	2}, // Amount: Bullets
@@ -91,8 +91,8 @@ new const g_aCrate[CrateList][CrateInfo] = {
 };
 new Trie:g_tCrates;
 
-new g_aCrateAmount[33][CrateList];
-new g_aCrateActive[33][CrateList];
+new g_eCrateAmount[33][CrateList];
+new g_eCrateActive[33][CrateList];
 
 enum _:enumPlayers {
 	PLAYER_ENT_BLOCK
@@ -130,7 +130,7 @@ public plugin_init()
 	g_tCrates = TrieCreate();
 	
 	for(new i = 0; i < CrateList; i++) {
-		TrieSetCell(g_tCrates, g_aCrate[i][CRATEINFO_NAME], i);
+		TrieSetCell(g_tCrates, g_eCrate[i][CRATEINFO_NAME], i);
 	}
 }
 public plugin_precache()
@@ -144,11 +144,11 @@ public plugin_cfg()
 	new ent = -1, target_name[32], Float:origin[3], Float:mins[3], Float:maxs[3];
 	new crate_info[CrateSpawns];
 
-	while( (ent = find_ent_by_class(ent, "func_breakable")) ) {
-		pev(ent, pev_targetname, target_name, charsmax(target_name));
+	while( (ent = rg_find_ent_by_class(ent, "func_breakable")) ) {
+		get_entvar(ent, var_targetname, target_name, charsmax(target_name));
 		if(TrieKeyExists(g_tCrates, target_name)) {
-			pev(ent, pev_absmin, mins);
-			pev(ent, pev_absmax, maxs);
+			get_entvar(ent, var_absmin, mins);
+			get_entvar(ent, var_absmax, maxs);
 			xs_vec_add(mins, maxs, origin);
 			xs_vec_mul_scalar(origin, 0.5, origin);
 
@@ -169,30 +169,30 @@ public plugin_cfg()
 		create_crate(get_num(RANDOM_CRATES) && crate_info[CrateType] != CRATE_DEATH ? random(CrateList) : crate_info[CrateType], origin);
 	}
 }
-create_crate(crate, Float:origin[3])
+create_crate(crateid, Float:origin[3])
 {
-	new ent = create_entity("func_breakable");
-	set_pev(ent, pev_classname, CRATE_CLASSNAME);
+	new ent = rg_create_entity("func_breakable");
+	set_entvar(ent, var_classname, CRATE_CLASSNAME);
 
-	set_pev(ent, pev_targetname, g_aCrate[crate][CRATEINFO_NAME]);
+	set_entvar(ent, var_targetname, g_eCrate[crateid][CRATEINFO_NAME]);
 	
 	DispatchKeyValue(ent, "material", "1");
-	DispatchKeyValue(ent, "spawnflags", "2" );
+	DispatchKeyValue(ent, "spawnflags", "2");
 	DispatchSpawn(ent);
 
 	engfunc(EngFunc_SetModel, ent, CRATE_MODEL);
 	engfunc(EngFunc_SetOrigin, ent, origin);
 	engfunc(EngFunc_SetSize, ent, CRATE_MINS, CRATE_MAXS);
 
-	set_pev(ent, pev_solid, SOLID_BBOX);
-	set_pev(ent, pev_health, 1.0);
-	set_pev(ent, pev_skin, crate);
+	set_entvar(ent, var_solid, SOLID_BBOX);
+	set_entvar(ent, var_health, 1.0);
+	set_entvar(ent, var_skin, crateid);
 }
 // Public: Deathrace
 public deathrace_crate_hit(id, ent)
 {
 	static target_name[32];
-	pev(ent, pev_targetname, target_name, charsmax(target_name));
+	get_entvar(ent, var_targetname, target_name, charsmax(target_name));
 	if(TrieKeyExists(g_tCrates, target_name)) {
 		static crate;
 		TrieGetCell(g_tCrates, target_name, crate);
@@ -211,8 +211,8 @@ public event_new_round()
 	g_bRoundEnded = false;
 
 	new ent = -1, target_name[32];
-	while( (ent = find_ent_by_class(ent, CRATE_CLASSNAME)) ) {
-		pev(ent, pev_targetname, target_name, charsmax(target_name));
+	while( (ent = rg_find_ent_by_class(ent, CRATE_CLASSNAME)) ) {
+		get_entvar(ent, var_targetname, target_name, charsmax(target_name));
 		if(TrieKeyExists(g_tCrates, target_name)) {
 			remove_entity(ent);
 		}
@@ -233,7 +233,7 @@ public ham_touch_crate_pre(ent, id)
 		static break_type;
 		if(g_players[id][PLAYER_ENT_BLOCK] != ent && (break_type || (break_type = get_pcvar_num(g_pCvars[TOUCH_BREAKTYPE]))) ) {
 			static target_name[32];
-			pev(ent, pev_targetname, target_name, charsmax(target_name));
+			get_entvar(ent, var_targetname, target_name, charsmax(target_name));
 				
 			// Lets see if we got a crate.
 			if( (break_type == 2) || (break_type == 1 && containi(target_name, "crate") >= 0) ) {
@@ -247,7 +247,7 @@ public ham_damage_crate_pre(ent, inflictor, attacker, Float:damage, bits)
 {
 	if(pev_valid(ent) && is_user_alive(attacker) && !g_bRoundEnded && g_players[attacker][PLAYER_ENT_BLOCK] != ent) {
 		new target_name[32];
-		pev(ent, pev_targetname, target_name, charsmax(target_name));
+		get_entvar(ent, var_targetname, target_name, charsmax(target_name));
 
 		if(!TrieKeyExists(g_tCrates, target_name)) {
 			return HAM_IGNORED;
@@ -255,7 +255,7 @@ public ham_damage_crate_pre(ent, inflictor, attacker, Float:damage, bits)
 
 		if(get_num(CRATE_RESPAWN) > 0) {
 			new Flaot:origin[3];
-			pev(ent, pev_origin, origin);
+			get_entvar(ent, var_origin, origin);
 			new data[3 + 1];
 			data[0] = _:origin[0];
 			data[1] = _:origin[1];
@@ -265,7 +265,7 @@ public ham_damage_crate_pre(ent, inflictor, attacker, Float:damage, bits)
 			set_task(get_float(CRATE_RESPAWN), "task_crate_respawn", get_member_game(m_iTotalRoundsPlayed), data, sizeof(data));
 		}
 
-		if((get_user_weapon(attacker) == CSW_KNIFE || bits & DMG_CRUSH) && (pev(ent, pev_health) - damage) <= 0.0 ) {
+		if((get_user_weapon(attacker) == CSW_KNIFE || bits & DMG_CRUSH) && (get_entvar(ent, var_health) - damage) <= 0.0 ) {
 			g_players[attacker][PLAYER_ENT_BLOCK] = ent;
 
 			new ret;
@@ -292,27 +292,27 @@ public task_crate_respawn(params[], taskid)
 // Public: Ham
 public ham_player_reset_max_speed_post(id)
 {
-	if(is_user_alive(id) && (g_aCrateActive[id][CRATE_SPEED] || g_aCrateActive[id][CRATE_FREEZE])) {
-		set_user_maxspeed(id, float(g_aCrate[ g_aCrateActive[id][CRATE_SPEED] ? CRATE_SPEED : CRATE_FREEZE ][CRATEINFO_AMOUNT]));
+	if(is_user_alive(id) && (g_eCrateActive[id][CRATE_SPEED] || g_eCrateActive[id][CRATE_FREEZE])) {
+		set_user_maxspeed(id, float(g_eCrate[ g_eCrateActive[id][CRATE_SPEED] ? CRATE_SPEED : CRATE_FREEZE ][CRATEINFO_AMOUNT]));
 	}
 }
 public ham_player_spawn_post(id)
 {
 	if(is_user_alive(id)) {
-		arrayset(g_aCrateAmount[id], 0, CrateList);
-		arrayset(g_aCrateActive[id], 0, CrateList);
+		arrayset(g_eCrateAmount[id], 0, CrateList);
+		arrayset(g_eCrateActive[id], 0, CrateList);
 	}
 }
 
 // Public: Tasks
-public task_timer(arrayTemp[2])
+public task_timer(params[2])
 {
 	new id, crateid;
-	id = arrayTemp[0];
-	crateid = arrayTemp[1];
+	id = params[0];
+	crateid = params[1];
 
-	if(is_user_connected(id)) {
-		g_aCrateActive[id][crateid] = 0;
+	if(is_user_alive(id)) {
+		g_eCrateActive[id][crateid] = 0;
 		
 		switch(crateid) {
 			case CRATE_GODMODE: {
@@ -332,22 +332,22 @@ public task_timer(arrayTemp[2])
 }
 crate_touch(id, crateid, bool:randomcrate = false)
 {
-	if(g_aCrate[crateid][CRATEINFO_MAXUSE] && ++g_aCrateAmount[id][crateid] > g_aCrate[crateid][CRATEINFO_MAXUSE] && !randomcrate) {
+	if(g_eCrate[crateid][CRATEINFO_MAXUSE] && ++g_eCrateAmount[id][crateid] > g_eCrate[crateid][CRATEINFO_MAXUSE] && !randomcrate) {
 		return HAM_IGNORED;
 	}
 	
 	switch(crateid) {
 		case CRATE_SPEED: {
-			g_aCrateActive[id][CRATE_FREEZE] = 0;
+			g_eCrateActive[id][CRATE_FREEZE] = 0;
 			
-			set_user_maxspeed(id, float(g_aCrate[crateid][CRATEINFO_AMOUNT]));
+			set_user_maxspeed(id, float(g_eCrate[crateid][CRATEINFO_AMOUNT]));
 			set_timer(id, crateid, 3.0);
 		}
 		case CRATE_HENADE: {
-			give_weapon(id, CSW_HEGRENADE, g_aCrate[crateid][CRATEINFO_AMOUNT]);
+			give_weapon(id, CSW_HEGRENADE, g_eCrate[crateid][CRATEINFO_AMOUNT]);
 		}
 		case CRATE_UZI: {
-			give_weapon(id, CSW_TMP, g_aCrate[crateid][CRATEINFO_AMOUNT]);
+			give_weapon(id, CSW_TMP, g_eCrate[crateid][CRATEINFO_AMOUNT]);
 		}
 		case CRATE_SHIELD: {
 			give_item(id, "weapon_shield");
@@ -357,24 +357,24 @@ crate_touch(id, crateid, bool:randomcrate = false)
 			set_timer(id, crateid);
 		}	
 		case CRATE_GRAVITY: {
-			set_user_gravity(id, (float(g_aCrate[crateid][CRATEINFO_AMOUNT]) / 800.0));
+			set_user_gravity(id, (float(g_eCrate[crateid][CRATEINFO_AMOUNT]) / 800.0));
 			set_timer(id, crateid, 10.0);
 		}
 		case CRATE_HEALTH: {
-			set_user_health(id, min(get_user_health(id) + g_aCrate[crateid][CRATEINFO_AMOUNT], 100));
+			set_user_health(id, min(get_user_health(id) + g_eCrate[crateid][CRATEINFO_AMOUNT], 100));
 		}
 		case CRATE_ARMOR: {
-			set_user_armor(id, min(get_user_armor(id) + g_aCrate[crateid][CRATEINFO_AMOUNT], 100));
+			set_user_armor(id, min(get_user_armor(id) + g_eCrate[crateid][CRATEINFO_AMOUNT], 100));
 		}
 		case CRATE_FROST: {
-			give_weapon(id, CSW_FLASHBANG, g_aCrate[crateid][CRATEINFO_AMOUNT]);
+			give_weapon(id, CSW_FLASHBANG, g_eCrate[crateid][CRATEINFO_AMOUNT]);
 		}
 		case CRATE_SMOKE: {
-			give_weapon(id, CSW_SMOKEGRENADE, g_aCrate[crateid][CRATEINFO_AMOUNT]);
+			give_weapon(id, CSW_SMOKEGRENADE, g_eCrate[crateid][CRATEINFO_AMOUNT]);
 		}
 		case CRATE_DEATH: {
 			if(get_user_godmode(id) || randomcrate) {
-				g_aCrateAmount[id][crateid]--;
+				g_eCrateAmount[id][crateid]--;
 				return HAM_IGNORED;
 			}
 			user_kill(id);
@@ -387,9 +387,9 @@ crate_touch(id, crateid, bool:randomcrate = false)
 			message_screenshake(id);
 		}
 		case CRATE_FREEZE: {
-			g_aCrateActive[id][CRATE_SPEED] = 0;
+			g_eCrateActive[id][CRATE_SPEED] = 0;
 			
-			set_user_maxspeed(id, float(g_aCrate[crateid][CRATEINFO_AMOUNT]));
+			set_user_maxspeed(id, float(g_eCrate[crateid][CRATEINFO_AMOUNT]));
 			set_timer(id, crateid, 2.0);
 		}
 		case CRATE_RANDOM: {
@@ -400,20 +400,20 @@ crate_touch(id, crateid, bool:randomcrate = false)
 			return HAM_IGNORED;
 		}
 	}
-	client_print_color(id, print_team_default, "%s^1 You pickedup%s^3 %s^1.", PREFIX, randomcrate ? " a random crate and received" : "", g_aCrate[crateid][CRATEINFO_NEWNAME]);
+	client_print_color(id, print_team_default, "%s^1 You pickedup%s^3 %s^1.", PREFIX, randomcrate ? " a random crate and received" : "", g_eCrate[crateid][CRATEINFO_NEWNAME]);
 	
 	return HAM_IGNORED;
 }
 set_timer(id, crateid, Float:flTime = 0.0)
 {
-	new arrayTemp[2];
-	arrayTemp[0] = id;
-	arrayTemp[1] = crateid;
+	new data[2];
+	data[0] = id;
+	data[1] = crateid;
 	
-	g_aCrateActive[id][crateid]++;
+	g_eCrateActive[id][crateid]++;
 	
 	if(!flTime) {
-		flTime = float(g_aCrate[crateid][CRATEINFO_AMOUNT]);
+		flTime = float(g_eCrate[crateid][CRATEINFO_AMOUNT]);
 	}
-	set_task(flTime, "task_timer", 15151, arrayTemp, sizeof(arrayTemp));
+	set_task(flTime, "task_timer", 15151, data, sizeof(data));
 }
